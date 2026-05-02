@@ -19,74 +19,67 @@ class MyBot(commands.Bot):
 
 bot = MyBot()
 
-@bot.tree.command(name="say", description="Отправить сообщение из JSON кода или файла")
-@app_commands.describe(
-    json_code="Вставьте JSON код здесь (если он короткий)",
-    file="Или прикрепите .txt/.json файл (если код очень длинный)"
-)
-@app_commands.default_permissions(manage_messages=True)
+@bot.tree.command(name="say", description="Отправить сообщение (поддержка Layouts)")
+@app_commands.describe(json_code="JSON код", file="Или файл с кодом")
 async def say(interaction: discord.Interaction, json_code: str = None, file: discord.Attachment = None):
     await interaction.response.defer(ephemeral=True)
-
     try:
         raw_data = ""
-
-        # 1. Сначала проверяем, прикреплен ли файл
         if file:
-            # Читаем содержимое файла
-            file_bytes = await file.read()
-            raw_data = file_bytes.decode('utf-8')
-        # 2. Если файла нет, берем текст из поля ввода
+            raw_data = (await file.read()).decode('utf-8')
         elif json_code:
             raw_data = json_code
-        else:
-            return await interaction.followup.send("❌ Вы не ввели код и не прикрепили файл!", ephemeral=True)
-
-        # Парсим JSON
+            
         data = json.loads(raw_data.strip())
-        
         content = data.get("content")
         embeds_to_send = []
 
-        # Извлекаем стандартные эмбеды
-        embeds_list = data.get("embeds", [])
-        for e_dict in embeds_list:
-            cleaned_embed = {k: v for k, v in e_dict.items() if v is not None}
-            embeds_to_send.append(discord.Embed.from_dict(cleaned_embed))
+        # 1. Сначала обрабатываем стандартные эмбеды (если они есть)
+        for e_dict in data.get("embeds", []):
+            embeds_to_send.append(discord.Embed.from_dict(e_dict))
 
-        # Логика для Discohook Layouts (твои компоненты)
+        # 2. Обработка Layouts (как на фото 1)
         if "components" in data:
-            for comp_group in data["components"]:
-                for sub_comp in comp_group.get("components", []):
-                    # Текстовые блоки (тип 10)
-                    if "content" in sub_comp:
-                        txt = sub_comp["content"]
-                        if len(txt) > 200 or embeds_to_send:
-                            embeds_to_send.append(discord.Embed(description=txt, color=0x9b59b6))
+            for row in data["components"]:
+                for comp in row.get("components", []):
+                    # Тип 10 — это текстовые блоки (заголовки и описания)
+                    if comp.get("type") == 10:
+                        text = comp.get("content", "")
+                        # Если это заголовок (короткий текст в рамке на фото 1)
+                        # Мы можем выделить его жирным или в отдельный эмбед
+                        if embeds_to_send:
+                            # Добавляем текст в последний эмбед, если он уже есть
+                            last_embed = embeds_to_send[-1]
+                            if not last_embed.description:
+                                last_embed.description = text
+                            else:
+                                last_embed.description += f"\n\n{text}"
                         else:
-                            content = txt
-                    
-                    # Медиа блоки (картинки, тип 12)
-                    if "items" in sub_comp:
-                        for item in sub_comp["items"]:
-                            if "media" in item and "url" in item["media"]:
-                                url = item["media"]["url"]
+                            # Создаем новый эмбед для этого блока
+                            embeds_to_send.append(discord.Embed(description=text, color=0x2b2d31))
+
+                    # Тип 12 — Медиа (картинка сверху)
+                    elif comp.get("type") == 12:
+                        for item in comp.get("items", []):
+                            url = item.get("media", {}).get("url")
+                            if url:
                                 if embeds_to_send:
                                     embeds_to_send[0].set_image(url=url)
                                 else:
-                                    embeds_to_send.append(discord.Embed().set_image(url=url))
+                                    e = discord.Embed(color=0x2b2d31)
+                                    e.set_image(url=url)
+                                    embeds_to_send.append(e)
+                    
+                    # Тип 14 — Разделители (линии)
+                    elif comp.get("type") == 14:
+                        if embeds_to_send:
+                            embeds_to_send[-1].description += "\n\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\n"
 
-        if not content and not embeds_to_send:
-            return await interaction.followup.send("❌ В JSON не найдено подходящих данных для отправки.", ephemeral=True)
-
-        # Отправляем в канал
         await interaction.channel.send(content=content, embeds=embeds_to_send[:10])
-        await interaction.followup.send("✅ Успешно отправлено!", ephemeral=True)
+        await interaction.followup.send("✅ Сообщение отправлено!", ephemeral=True)
 
-    except json.JSONDecodeError:
-        await interaction.followup.send("❌ Ошибка: Неверный формат JSON. Проверьте скобки.", ephemeral=True)
     except Exception as e:
-        await interaction.followup.send(f"❌ Произошла ошибка: `{str(e)}`", ephemeral=True)
+        await interaction.followup.send(f"❌ Ошибка: `{e}`", ephemeral=True)
 
 @bot.tree.command(name="status", description="Проверка пинга")
 async def status_command(interaction: discord.Interaction):
