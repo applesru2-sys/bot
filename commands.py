@@ -34,11 +34,9 @@ async def say(interaction: discord.Interaction, json_code: str = None, file: dis
         data = json.loads(raw_data.strip())
         content = data.get("content")
         embeds_to_send = []
-
-        # Цвет фона как в Discord (темно-серый), чтобы не было ярких полосок
         DEFAULT_COLOR = 0x2b2d31 
 
-        # 1. Сначала стандартные эмбеды
+        # 1. Стандартные эмбеды
         for e_dict in data.get("embeds", []):
             embeds_to_send.append(discord.Embed.from_dict(e_dict))
 
@@ -47,22 +45,18 @@ async def say(interaction: discord.Interaction, json_code: str = None, file: dis
             for row in data["components"]:
                 for comp in row.get("components", []):
                     
-                    # --- ТЕКСТОВЫЕ БЛОКИ (Type 10) ---
+                    # Текстовые блоки
                     if comp.get("type") == 10:
                         text = comp.get("content", "")
-                        if not text.strip(): continue
+                        if text.strip():
+                            new_e = discord.Embed(description=text, color=DEFAULT_COLOR)
+                            embeds_to_send.append(new_e)
 
-                        # Чтобы блоки не слипались, создаем ДЛЯ КАЖДОГО новый эмбед
-                        # Это создаст визуальные отступы между секциями, как на фото 1
-                        new_e = discord.Embed(description=text, color=DEFAULT_COLOR)
-                        embeds_to_send.append(new_e)
-
-                    # --- МЕДИА (Type 12) ---
+                    # Медиа (картинки)
                     elif comp.get("type") == 12:
                         for item in comp.get("items", []):
                             url = item.get("media", {}).get("url")
                             if url:
-                                # Картинку вешаем на самый первый эмбед в списке
                                 if embeds_to_send:
                                     embeds_to_send[0].set_image(url=url)
                                 else:
@@ -70,27 +64,27 @@ async def say(interaction: discord.Interaction, json_code: str = None, file: dis
                                     e.set_image(url=url)
                                     embeds_to_send.append(e)
                     
-                    # --- РАЗДЕЛИТЕЛИ (Type 14) ---
+                    # РАЗДЕЛИТЕЛИ (Исправлено)
                     elif comp.get("type") == 14:
-                        # Если есть предыдущий эмбед, просто добавляем черту в конец
                         if embeds_to_send:
-                            # Используем специальный символ длинной черты
+                            last_e = embeds_to_send[-1]
                             line = "\n" + "⎯" * 35 
-                            if embeds_to_send[-1].description:
-                                embeds_to_send[-1].description += line
+                            if last_e.description is None:
+                                last_e.description = line
+                            else:
+                                last_e.description += line
 
-        # Discord разрешает до 10 эмбедов в одном сообщении
         final_embeds = embeds_to_send[:10]
-
         if not content and not final_embeds:
             return await interaction.followup.send("❌ Сообщение пустое!", ephemeral=True)
 
         await interaction.channel.send(content=content, embeds=final_embeds)
         await interaction.followup.send("✅ Сообщение успешно отправлено!", ephemeral=True)
 
+    except json.JSONDecodeError:
+        await interaction.followup.send("❌ Ошибка: Неверный формат JSON.", ephemeral=True)
     except Exception as e:
         await interaction.followup.send(f"❌ Ошибка: `{e}`", ephemeral=True)
-
 @bot.tree.command(name="status", description="Проверка пинга")
 async def status_command(interaction: discord.Interaction):
     await interaction.response.send_message(f"🟢 Пинг: `{round(bot.latency * 1000)} мс`", ephemeral=True)
