@@ -1,4 +1,5 @@
 import discord
+import os
 from discord.ext import commands
 from discord import app_commands
 import json
@@ -91,5 +92,8 @@ async def status_command(interaction: discord.Interaction):
     await interaction.response.send_message(response_text, ephemeral=True)
 
 
+# Ловим токен из безопасного поля BotHost
+TOKEN = os.environ.get("TOKEN") 
+
 # Запуск бота 
-bot.run("MTQ5NDk3MzQ1MjgwMzkwMzYwMA.GxAe79.Aozg-QrJMsPjerUhdjY1yADrDA2ZumTrtYApzk")
+bot.run(TOKEN)
